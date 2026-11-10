@@ -8,7 +8,15 @@
 
 ## 下载即用
 
-到 [Releases](../../releases) 下载对应平台的单文件，双击运行，浏览器会自动打开编辑器。
+到 [Releases](https://github.com/ChinaCHJ/pdfEdit/releases) 下载对应平台的单文件，双击运行，浏览器会自动打开编辑器。
+
+直接给 Windows 用户的永久链接：
+
+```
+https://github.com/ChinaCHJ/pdfEdit/releases/latest/download/pdf-editor-windows-x64.exe
+```
+
+这个地址永远指向最新版本，可以直接贴在群里或文档里。
 
 | 平台 | 文件 | 说明 |
 |---|---|---|
