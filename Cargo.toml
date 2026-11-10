@@ -1,0 +1,21 @@
+[package]
+name = "pdf-editor"
+version = "0.1.0"
+edition = "2024"
+description = "Back-editing PDF editor — renders pages as-is, edits text in place"
+
+[dependencies]
+anyhow = "1.0.104"
+axum = "0.8.9"
+rust-embed = "8.5"
+serde = { version = "1.0.229", features = ["derive"] }
+tempfile = "3.27.0"
+tokio = { version = "1.54.1", features = ["full"] }
+
+# 优化体积为主：这个服务只做协议组装和进程调度，不吃 CPU
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true

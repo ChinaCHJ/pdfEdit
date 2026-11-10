@@ -1,0 +1,1775 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>PDF 编辑器</title>
+<style>
+:root{
+  --bg:#161616; --panel:#1e1e1e; --panel2:#262626; --line:#333; --line2:#3d3d3d;
+  --text:#e9e9e9; --muted:#8c8c8c; --accent:#4c9aff; --accent-dim:#2b5f9e;
+  --danger:#c0504d;
+}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{
+  margin:0; background:var(--bg); color:var(--text);
+  font-family:"Microsoft YaHei","微软雅黑",system-ui,sans-serif;
+  display:flex; flex-direction:column; overflow:hidden;
+}
+button{
+  font-family:inherit; font-size:13px; color:var(--text);
+  background:var(--panel2); border:1px solid var(--line); border-radius:6px;
+  padding:6px 11px; cursor:pointer; transition:background .12s,border-color .12s; white-space:nowrap;
+}
+button:hover:not(:disabled){background:#303030; border-color:#4a4a4a}
+button:disabled{opacity:.38; cursor:not-allowed}
+button.primary{background:var(--accent-dim); border-color:var(--accent); color:#fff}
+button.primary:hover:not(:disabled){background:#356fb8}
+button.danger{border-color:#5a2c2c}
+button.danger:hover:not(:disabled){background:#3a2020; border-color:var(--danger)}
+
+/* 顶部 */
+header{
+  display:flex; align-items:center; gap:10px;
+  padding:9px 16px; background:var(--panel); border-bottom:1px solid var(--line);
+  flex-shrink:0; flex-wrap:wrap;
+}
+.brand{font-size:14px; font-weight:500; margin-right:6px; white-space:nowrap}
+.brand span{color:var(--muted); font-weight:400; font-size:12px; margin-left:6px}
+.spacer{flex:1}
+
+/* 模式 + 工具条 */
+.tabs{
+  display:flex; align-items:center; gap:4px; padding:7px 16px 0;
+  background:var(--panel); border-bottom:1px solid var(--line); flex-shrink:0; flex-wrap:wrap;
+}
+.tabs[hidden]{display:none}
+.tab{
+  padding:6px 14px; border-radius:6px 6px 0 0; border:1px solid transparent;
+  border-bottom:none; background:transparent; color:var(--muted); font-size:13px;
+}
+.tab:hover{color:var(--text); background:#242424}
+.tab.on{background:var(--bg); color:var(--text); border-color:var(--line); border-bottom:1px solid var(--bg); margin-bottom:-1px}
+
+.bar{
+  display:none; align-items:center; gap:8px; padding:8px 16px;
+  background:var(--bg); border-bottom:1px solid var(--line); flex-shrink:0; flex-wrap:wrap;
+  min-height:44px;
+}
+.bar.on{display:flex}
+.bar label{font-size:12px; color:var(--muted); margin-right:2px}
+.tb{height:29px; padding:0 10px; display:inline-flex; align-items:center; gap:5px; font-size:12.5px}
+.tb.on{background:var(--accent-dim); border-color:var(--accent); color:#fff}
+.sq{width:22px;height:22px;border-radius:4px;border:1.5px solid #4a4a4a;cursor:pointer;padding:0}
+.sq.on{border-color:#fff; box-shadow:0 0 0 1.5px var(--accent)}
+.vsep{width:1px;height:20px;background:var(--line2);margin:0 4px}
+input[type=range]{width:96px; accent-color:var(--accent)}
+input[type=text],input[type=number]{
+  background:#1a1a1a;border:1px solid var(--line2);color:var(--text);
+  border-radius:5px;padding:5px 8px;font-size:12.5px;font-family:inherit;
+}
+select.sel{
+  background:#1a1a1a;border:1px solid var(--line2);color:var(--text);
+  border-radius:5px;padding:4px 6px;font-size:12.5px;font-family:inherit;cursor:pointer;
+}
+select.sel:focus{outline:1px solid var(--accent)}
+.val{font-size:12px;color:var(--muted);min-width:34px;text-align:center;font-variant-numeric:tabular-nums}
+
+/* 主区 */
+main{flex:1; overflow:auto; padding:24px 16px 80px; position:relative}
+#intro{max-width:640px; margin:6vh auto 0; text-align:center}
+#drop{
+  border:1.5px dashed var(--line2); border-radius:14px; padding:62px 32px;
+  background:#1a1a1a; cursor:pointer; transition:border-color .15s, background .15s;
+}
+#drop:hover,#drop.over{border-color:var(--accent); background:#1b2330}
+#drop .icon{font-size:13px; letter-spacing:2px; color:#4a4a4a; margin-bottom:16px}
+#drop h2{font-size:15px; font-weight:500; margin:0 0 8px}
+#drop p{font-size:13px; color:var(--muted); margin:0; line-height:1.7}
+.hint{margin-top:18px; font-size:12px; color:#6a6a6a; line-height:1.8}
+
+#viewer{display:none; flex-direction:column; align-items:center; gap:26px}
+#viewer.on{display:flex}
+
+.pw{position:relative; flex-shrink:0}
+.page{
+  position:relative; background:#fff; overflow:hidden;
+  box-shadow:0 8px 30px rgba(0,0,0,.55);
+}
+.page canvas{display:block; width:100%; height:100%}
+.layer{position:absolute;inset:0}
+.shapes{position:absolute;left:0;top:0;width:100%;height:100%;overflow:visible;pointer-events:none}
+.annots{position:absolute;inset:0;pointer-events:none}
+.annots .note{pointer-events:auto}
+.wm{position:absolute;left:0;top:0;width:100%;height:100%;pointer-events:none}
+
+/* 文字层 */
+.txt{
+  position:absolute; color:transparent; white-space:pre; overflow:hidden;
+  cursor:text; border-radius:2px; transition:background .08s; user-select:none;
+}
+.txt:hover{background:rgba(76,154,255,.16)}
+.txt.focus{
+  color:var(--fg,#111); white-space:pre-wrap; overflow:visible; z-index:20;
+  outline:1.5px solid var(--accent); user-select:text; cursor:text;
+  box-shadow:0 1px 6px rgba(0,0,0,.18);
+}
+.txt.dirty{color:var(--fg,#111); white-space:pre-wrap; overflow:visible; z-index:10}
+
+/* 批注 */
+.ann{
+  position:absolute; pointer-events:auto; cursor:pointer;
+}
+.ann.sel{outline:1.5px dashed var(--accent)}
+.note{
+  position:absolute; padding:5px 7px; background:#fffbe6; border:1px solid #d9a441;
+  border-radius:3px; color:#333; font-size:12px; line-height:1.45;
+  white-space:pre-wrap; word-break:break-word; min-width:40px; min-height:24px;
+  box-shadow:0 2px 8px rgba(0,0,0,.25);
+}
+.note:focus{outline:1.5px solid var(--accent)}
+
+/* 表单 */
+input.ff{
+  position:absolute; background:rgba(76,154,255,.10);
+  border:1px solid rgba(76,154,255,.55); border-radius:2px;
+  color:#0b2a4a; font-family:"Microsoft YaHei",sans-serif;
+  padding:1px 3px; outline:none;
+}
+input.ff:focus{background:rgba(76,154,255,.18); border-color:var(--accent); box-shadow:0 0 0 2px rgba(76,154,255,.25)}
+input.ff[type=checkbox]{
+  appearance:none; padding:0; cursor:pointer;
+  display:flex; align-items:center; justify-content:center;
+}
+input.ff[type=checkbox]:checked::after{
+  content:"✓"; color:#fff; font-size:11px; line-height:1;
+}
+input.ff[type=checkbox]:checked{background:#2b6cb0; border-color:#2b6cb0}
+.ffbar{position:absolute;inset:0;pointer-events:none}
+
+/* 页面工具条 */
+.pbar{
+  display:flex; align-items:center; gap:6px; margin-top:8px;
+  font-size:12px; color:var(--muted); padding:0 2px;
+}
+.pbar .num{font-variant-numeric:tabular-nums; min-width:52px}
+.pbar button{padding:3px 8px; font-size:12px}
+.pbar .del{color:#e0685f}
+
+/* 模式提示 */
+.tip{font-size:12px;color:#6a6a6a}
+
+footer{
+  flex-shrink:0; display:flex; align-items:center; gap:16px;
+  padding:6px 16px; background:var(--panel); border-top:1px solid var(--line);
+  font-size:12px; color:var(--muted); min-height:30px;
+}
+footer .ok{color:#5fbf7f}
+footer .err{color:#e0685f}
+footer .warn{color:#d9a441}
+
+#overlay{
+  position:absolute; inset:0; background:rgba(16,16,16,.86);
+  display:flex; align-items:center; justify-content:center; gap:12px;
+  font-size:13px; z-index:80; backdrop-filter:blur(2px);
+}
+#overlay[hidden]{display:none}
+.spin{width:15px;height:15px;border:2px solid #3a3a3a;border-top-color:var(--accent);border-radius:50%;animation:sp .7s linear infinite}
+@keyframes sp{to{transform:rotate(360deg)}}
+#fileInput,#mergeInput{display:none}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="brand">PDF 编辑器<span>原样呈现 · 增量编辑</span></div>
+  <div class="spacer"></div>
+  <button id="btnPick" type="button">打开 PDF</button>
+  <button id="btnSave" class="primary" type="button" disabled>保存为 PDF</button>
+</header>
+
+<div class="tabs" id="tabs" hidden>
+  <button class="tab on" data-mode="text" type="button">文字</button>
+  <button class="tab" data-mode="annot" type="button">批注</button>
+  <button class="tab" data-mode="form" type="button">表单</button>
+  <button class="tab" data-mode="page" type="button">页面</button>
+  <button class="tab" data-mode="watermark" type="button">水印</button>
+  <div class="spacer"></div>
+  <span class="tip" id="modeTip"></span>
+</div>
+
+<div class="bar" id="barText">
+  <label>字号</label>
+  <button class="tb" type="button" id="fsMinus">−</button>
+  <span class="val" id="fsVal">—</span>
+  <button class="tb" type="button" id="fsPlus">+</button>
+  <div class="vsep"></div>
+  <button class="tb" type="button" id="btnBold"><b>B</b></button>
+  <div class="vsep"></div>
+  <label>文字色</label>
+  <div id="textColors" style="display:flex;gap:4px"></div>
+  <div class="vsep"></div>
+  <label>字体</label>
+  <select class="sel" id="fontSel">
+    <option value="'Microsoft YaHei','微软雅黑',sans-serif">微软雅黑</option>
+    <option value="'SimSun','宋体',serif">宋体</option>
+    <option value="'SimHei','黑体',sans-serif">黑体</option>
+    <option value="'KaiTi','楷体',serif">楷体</option>
+    <option value="'FangSong','仿宋',serif">仿宋</option>
+    <option value="'DengXian','等线',sans-serif">等线</option>
+    <option value="Arial,Helvetica,sans-serif">Arial</option>
+    <option value="'Times New Roman',Times,serif">Times New Roman</option>
+  </select>
+  <div class="vsep"></div>
+  <button class="tb on" type="button" id="btnFit" title="文字超出原行宽度时自动缩小字号，避免盖住下方内容">自动适应宽度</button>
+  <button class="tb" type="button" id="btnMergeNext" title="把下一行并入当前行，之后可以自由换行">并入下一行</button>
+  <button class="tb" type="button" id="btnMergePara" title="一直并入到本段结束（遇到缩进、段末短行或跨页就停），变成整段可自由重排">并入整段</button>
+  <div class="vsep"></div>
+  <button class="tb" type="button" id="btnResetText">撤销文字改动</button>
+</div>
+
+<div class="bar" id="barAnnot">
+  <label>工具</label>
+  <button class="tb on" data-tool="highlight" type="button">高亮</button>
+  <button class="tb" data-tool="underline" type="button">下划线</button>
+  <button class="tb" data-tool="strike" type="button">删除线</button>
+  <button class="tb" data-tool="box" type="button">矩形</button>
+  <button class="tb" data-tool="ellipse" type="button">圈选</button>
+  <button class="tb" data-tool="arrow" type="button">箭头</button>
+  <button class="tb" data-tool="note" type="button">便签</button>
+  <div class="vsep"></div>
+  <label>颜色</label>
+  <div id="swatches" style="display:flex;gap:5px"></div>
+  <div class="vsep"></div>
+  <button class="tb" type="button" id="btnClearAnnot">清空本页批注</button>
+</div>
+
+<div class="bar" id="barForm">
+  <span class="tip">浅蓝色框是 PDF 里检测到的表单字段，直接点进去填写；勾选框点一下即可打勾。</span>
+  <div class="vsep"></div>
+  <button class="tb" type="button" id="btnClearForm">清空所有填写</button>
+</div>
+
+<div class="bar" id="barPage">
+  <button class="tb" type="button" id="btnAddBlank">插入空白页</button>
+  <button class="tb" type="button" id="btnMerge">合并另一个 PDF</button>
+  <div class="vsep"></div>
+  <span class="tip">每页下方的工具条可以删除、旋转、调顺序；导出的顺序就是这里的顺序。</span>
+</div>
+
+<div class="bar" id="barWm">
+  <label>水印文字</label>
+  <input type="text" id="wmText" value="内部资料 请勿外传" placeholder="输入水印文字" style="width:190px">
+  <div class="vsep"></div>
+  <label>字号</label>
+  <input type="range" id="wmSize" min="10" max="80" value="26">
+  <span class="val" id="wmSizeVal">26</span>
+  <div class="vsep"></div>
+  <label>透明度</label>
+  <input type="range" id="wmOpacity" min="2" max="60" value="14">
+  <span class="val" id="wmOpacityVal">14%</span>
+  <div class="vsep"></div>
+  <label>角度</label>
+  <input type="range" id="wmAngle" min="-90" max="90" value="-30">
+  <span class="val" id="wmAngleVal">-30°</span>
+  <div class="vsep"></div>
+  <button class="tb" type="button" id="btnWmToggle">应用水印</button>
+</div>
+
+<main>
+  <div id="intro">
+    <div id="drop">
+      <div class="icon">PDF</div>
+      <h2>打开一个 PDF</h2>
+      <p>拖进来，或者点击选择 · 页面原样显示，可改字、批注、填表、调页、加水印</p>
+    </div>
+    <div class="hint">
+      文件全部在本地浏览器里解析，不会上传。<br>
+      扫描件没有文字层，无法编辑文字，但可以批注和加水印。
+    </div>
+  </div>
+
+  <div id="viewer"></div>
+  <div id="overlay" hidden><div class="spin"></div><span id="ovText">处理中…</span></div>
+</main>
+
+<footer>
+  <span id="stat">就绪</span>
+  <span id="meta"></span>
+</footer>
+
+<input type="file" id="fileInput" accept="application/pdf,.pdf">
+<input type="file" id="mergeInput" accept="application/pdf,.pdf">
+
+<script type="module">
+import * as pdfjsLib from './vendor/pdf.min.mjs';
+/* 必须用绝对路径：相对的 cMapUrl 会被基于 worker 位置再拼一次，中文 CID 字体就提取不出文字 */
+pdfjsLib.GlobalWorkerOptions.workerSrc = '/vendor/pdf.worker.min.mjs';
+
+const RENDER_SCALE = 3.0;
+/* 96px = 72pt，按这个比例导出的页面尺寸才和原件一致 */
+const DISPLAY_SCALE = 4 / 3;
+
+const $ = (s) => document.querySelector(s);
+const $$ = (s) => [...document.querySelectorAll(s)];
+const intro = $('#intro'), viewer = $('#viewer'), tabs = $('#tabs');
+const overlay = $('#overlay'), ovText = $('#ovText');
+const stat = $('#stat'), meta = $('#meta');
+const btnSave = $('#btnSave');
+
+let pdfDoc = null;
+let pages = [];            // { num, canvas, layer, shapes, annots, noteLayer, formLayer, wmLayer, pw, w, h, rot, dirty, annList, fields, deleted }
+let byEl = new WeakMap();  // DOM 元素 → page 对象
+let mode = 'text';
+let tool = 'highlight';
+let color = '#ffd400';
+let wm = { on: false, text: '内部资料 请勿外传', size: 26, opacity: 0.14, angle: -30 };
+let editingEl = null;
+let dirtyCount = 0;
+let busy = false;
+let sourceName = '';
+let drag = null;
+let pageOps = 0;   // 页面级操作的次数（删除、旋转、重排、插入、合并）
+let lastEdited = null;             // 上一次编辑过的文字块，工具栏操作要用
+let autoFit = true;                // 文字超宽时是否自动缩小字号
+let textColor = '#111111';
+let textFont = "'Microsoft YaHei','微软雅黑',sans-serif";
+let fontPinned = false;             // 用户手动选过字体后，就不再跟随原件字体
+
+/* 用一个隐藏的探针元素量文字宽度。
+   不用 canvas 的 measureText —— 它对中文和自定义字体族的测量值和实际渲染对不上，
+   会导致算出来的字号明明够宽、渲染出来却换行。 */
+let probeEl = null;
+function measureText(text, size, family, bold) {
+  if (!probeEl) {
+    probeEl = document.createElement('div');
+    probeEl.style.cssText =
+      'position:absolute;left:-99999px;top:0;visibility:hidden;white-space:pre;padding:0;margin:0;';
+    document.body.appendChild(probeEl);
+  }
+  probeEl.style.fontFamily = family;
+  probeEl.style.fontWeight = bold ? '700' : '400';
+  probeEl.style.fontSize = size + 'px';
+  probeEl.textContent = text;
+  return probeEl.getBoundingClientRect().width;
+}
+
+function pageOf(el) {
+  const pageEl = el.closest('.page');
+  return pageEl ? byEl.get(pageEl) : null;
+}
+
+/* ============ 原件字体识别 ============ */
+/// PDF 里的中文字体名是 UTF-8 字节被当成 latin-1 解出来的（"æ¥·ä½" 其实是"楷体"），先还原
+function repairFontName(raw) {
+  if (!raw) return '';
+  try {
+    const bytes = Uint8Array.from([...raw].map((c) => c.charCodeAt(0) & 0xff));
+    // fatal 让不符合 UTF-8 的名字直接抛错，免得把本来正常的名子搞坏
+    return new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+  } catch {
+    return raw;
+  }
+}
+
+/// PDF 字体名 → 本机字体族。顺序有讲究：「仿宋」含「宋」，必须排在「宋」前面
+const FONT_RULES = [
+  [/楷|kai/i, "'KaiTi','楷体',serif"],
+  [/仿宋|fangsong/i, "'FangSong','仿宋',serif"],
+  [/宋|song|simsun|ming/i, "'SimSun','宋体',serif"],
+  [/等线|dengxian/i, "'DengXian','等线',sans-serif"],
+  [/黑|hei|yahei|雅黑/i, "'Microsoft YaHei','微软雅黑',sans-serif"],
+  [/courier|mono|consol/i, "'Courier New',Courier,monospace"],
+  [/times|roman/i, "'Times New Roman',Times,serif"],
+  [/arial|helvetica/i, 'Arial,Helvetica,sans-serif'],
+];
+function matchFamily(name) {
+  for (const [re, fam] of FONT_RULES) if (re.test(name)) return fam;
+  return '';
+}
+
+/// 把一个文字块标记为「已修改」：补上底色遮住原字，计入改动数
+function markDirty(div) {
+  const rec = pageOf(div);
+  if (rec && !div.dataset.bg) {
+    const { bg, fg } = sampleBg(rec.canvas, parseFloat(div.style.left), parseFloat(div.style.top),
+      parseFloat(div.style.width), parseFloat(div.style.height));
+    div.dataset.bg = bg;
+    if (!div.dataset.fg) {
+      div.dataset.fg = fg;
+      div.style.setProperty('--fg', fg);
+    }
+    div.style.background = bg;
+  }
+  if (!div.classList.contains('dirty')) dirtyCount++;
+  div.classList.add('dirty');
+  updateMeta();
+}
+
+/// 让文字在原始行宽内放得下：优先缩字号，缩到六成还不行就让它换行
+function fitToWidth(div) {
+  if (!autoFit) return;
+  // 合并过的块本来就允许换行，不再强行压成一行
+  if (div.dataset.mergedCount) return;
+
+  const text = (div.innerText || '').replace(/\n+$/, '');
+  if (!text.trim()) return;
+
+  const family = div.style.fontFamily || textFont;
+  const bold = div.dataset.bold === '1';
+  const base = parseFloat(div.dataset.baseFont || div.style.fontSize);
+  const maxW = parseFloat(div.style.width) - 1;
+  const floor = base * 0.62;
+
+  let size = base;
+  const w0 = measureText(text, base, family, bold);
+  if (w0 > maxW) {
+    // 先按宽度比例估一次，再小幅微调，避免几十次重排
+    size = Math.max(floor, base * (maxW / w0));
+    let guard = 0;
+    while (size > floor && measureText(text, size, family, bold) > maxW && guard++ < 30) {
+      size = Math.max(floor, size - 0.2);
+    }
+    if (measureText(text, size, family, bold) > maxW) {
+      setStat('文字太长，已缩到最小并允许换行', 'warn');
+    }
+  }
+
+  size = Math.round(size * 100) / 100;
+  div.style.fontSize = size.toFixed(2) + 'px';
+  div.style.lineHeight = (size * 1.3).toFixed(2) + 'px';
+  div.style.height = (size * 1.3).toFixed(2) + 'px';
+}
+
+const COLORS = ['#ffd400', '#ff8f4d', '#ff5a5a', '#4cd07a', '#4c9aff', '#b06cff', '#333333'];
+
+const setStat = (t, k) => { stat.textContent = t; stat.className = k || ''; };
+function setBusy(on, text) {
+  busy = on; overlay.hidden = !on;
+  if (text) ovText.textContent = text;
+  document.body.style.cursor = on ? 'progress' : '';
+}
+function updateMeta() {
+  const live = pages.filter((p) => !p.deleted).length;
+  const anns = pages.reduce((s, p) => s + (p.deleted ? 0 : p.annList.length), 0);
+  const forms = pages.reduce((s, p) => s + (p.deleted ? 0 : p.fields.filter((f) => f.value).length), 0);
+  const bits = [];
+  if (dirtyCount) bits.push(`改字 ${dirtyCount}`);
+  if (anns) bits.push(`批注 ${anns}`);
+  if (forms) bits.push(`表单 ${forms}`);
+  bits.push(`${live} 页`);
+  meta.textContent = bits.join(' · ');
+}
+
+/* ============ 底色采样（覆盖改字时用来遮住原字） ============ */
+function sampleBg(canvas, left, top, w, h) {
+  const ratio = canvas.width / parseFloat(canvas.style.width);
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
+  const x = Math.max(0, Math.floor(left * ratio));
+  const y = Math.max(0, Math.floor(top * ratio));
+  const ww = Math.max(1, Math.min(Math.round(w * ratio), canvas.width - x));
+  const hh = Math.max(1, Math.min(Math.round(h * ratio), canvas.height - y));
+  if (ww < 1 || hh < 1) return { bg: '#ffffff', fg: '#111111' };
+
+  let data;
+  try { data = ctx.getImageData(x, y, ww, hh).data; }
+  catch { return { bg: '#ffffff', fg: '#111111' }; }
+
+  const hist = new Map();
+  const step = 4 * Math.max(1, Math.floor((ww * hh) / 6000));
+  for (let i = 0; i < data.length; i += step) {
+    const key = ((data[i] >> 4) << 8) | ((data[i + 1] >> 4) << 4) | (data[i + 2] >> 4);
+    hist.set(key, (hist.get(key) || 0) + 1);
+  }
+  let bestK = 0, bestV = -1;
+  for (const [k, v] of hist) if (v > bestV) { bestV = v; bestK = k; }
+  const r = ((bestK >> 8) & 15) * 17;
+  const g = ((bestK >> 4) & 15) * 17;
+  const b = (bestK & 15) * 17;
+  const lum = 0.299 * r + 0.587 * g + 0.114 * b;
+  return { bg: `rgb(${r},${g},${b})`, fg: lum > 140 ? '#111111' : '#f5f5f5' };
+}
+
+/* ============ 水印（前端预览与后端渲染算法保持一致） ============ */
+function watermarkSVG(w, h, cfg) {
+  const fs = Math.max(6, cfg.size);
+  const stepX = fs * (cfg.text.length * 1.05 + 6);
+  const stepY = fs * 4.2;
+  const rows = Math.ceil(h / stepY) + 4;
+  const cols = Math.ceil(w / stepX) + 4;
+  let cells = '';
+  const esc = (s) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  for (let r = -2; r < rows - 2; r++) {
+    for (let c = -2; c < cols - 2; c++) {
+      cells += `<text x="${(c * stepX).toFixed(1)}" y="${((r + 0.5) * stepY).toFixed(1)}" font-size="${fs}">${esc(cfg.text)}</text>`;
+    }
+  }
+  return `<svg class="wm" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" style="opacity:${cfg.opacity}">
+    <g transform="rotate(${cfg.angle} ${w / 2} ${h / 2})" fill="#888" font-family="Microsoft YaHei,sans-serif">${cells}</g></svg>`;
+}
+
+/* ============ 文字层 ============ */
+function joinGap(prev, next, gap, fontH) {
+  if (!prev) return next;
+  if (gap > fontH * 0.22) {
+    const a = prev.slice(-1), b = next[0];
+    if (/[A-Za-z0-9]/.test(a) && /[A-Za-z0-9]/.test(b)) return prev + ' ' + next;
+  }
+  return prev + next;
+}
+
+async function buildTextLayer(page, vp, layer) {
+  const tc = await page.getTextContent();
+  // 认出每个文字块在原件的字体，编辑时自动沿用。
+  // pdf.js 只把字体分成 serif / sans-serif 两类，粒度不够；真实字体名在 commonObjs 里，
+  // 但 PDF 里的中文名是 UTF-8 字节被当成 latin-1 解出来的（"æ¥·ä½" 其实是"楷体"），要先还原。
+  const fontFamilyOf = {};
+  for (const key of Object.keys(tc.styles)) {
+    let fam = '';
+    try {
+      fam = matchFamily(repairFontName(page.commonObjs.get(key).name || ''));
+    } catch { fam = ''; }
+    fontFamilyOf[key] = fam;
+  }
+  const items = [];
+  for (const it of tc.items) {
+    if (!it.str || !it.str.trim()) continue;
+    const tx = pdfjsLib.Util.transform(vp.transform, it.transform);
+    const fontH = Math.hypot(tx[2], tx[3]);
+    if (fontH < 1.5) continue;
+    items.push({
+      str: it.str, left: tx[4], top: tx[5] - fontH * 0.82,
+      right: tx[4] + (it.width || 0) * DISPLAY_SCALE, fontH,
+      fontKey: it.fontName || '',
+    });
+  }
+  items.sort((a, b) => (a.top - b.top) || (a.left - b.left));
+
+  // 第一步：先按纵坐标聚成「视觉行」。
+  // 不能直接按 (top, left) 排序后线性扫描 —— 同一视觉行里各字段的 top 常有零点几的差，
+  // 排序时会把左右两栏的字段交错排到一起，最后左边的字和右边的字被拼进同一个块。
+  const lines = [];
+  for (const it of items) {
+    const last = lines[lines.length - 1];
+    if (last && Math.abs(it.top - last.top) < last.baseFont * 0.55) {
+      last.items.push(it);
+      last.top = Math.min(last.top, it.top);
+    } else {
+      lines.push({ top: it.top, baseFont: it.fontH, items: [it] });
+    }
+  }
+
+  // 第二步：行内按横坐标排，间距超过 1.5 个字宽就切成独立的块。
+  // 发票、报表的一行里常常并排着好几个互不相干的字段（表格各列、左右分栏），
+  // 硬拼成一个块的话，用户想改一个数字，整行都会变成可编辑。
+  const rows = [];
+  for (const line of lines) {
+    line.items.sort((a, b) => a.left - b.left);
+    let cur = null;
+    for (const it of line.items) {
+      const gap = cur ? it.left - cur.right : 0;
+      // 阈值 1.5 个字宽是量出来的：表格列之间通常有 4 个字宽以上的空隙，
+      // 而表头里「单 位」「数 量」这类加宽字距只有 0.6 个字宽，再收紧就把表头拆碎了
+      if (cur && gap <= cur.maxFont * 1.5 && gap > -cur.maxFont) {
+        cur.text = joinGap(cur.text, it.str, gap, cur.maxFont);
+        cur.right = Math.max(cur.right, it.right);
+        cur.wsum += it.fontH * it.str.length;
+        cur.wlen += it.str.length;
+        cur.maxFont = Math.max(cur.maxFont, it.fontH);
+        cur.counts[it.fontKey] = (cur.counts[it.fontKey] || 0) + it.str.length;
+      } else {
+        cur = {
+          text: it.str, left: it.left, right: it.right, top: line.top,
+          fontH: it.fontH, maxFont: it.fontH,
+          wsum: it.fontH * it.str.length, wlen: it.str.length,
+          counts: { [it.fontKey]: it.str.length },
+        };
+        rows.push(cur);
+      }
+    }
+  }
+
+  // 字号按字符数加权，避免块里混进一个大字就把整块字号拉大；
+  // 字体取块内字符数最多的那个，编辑时用它，改出来的字才和原件像
+  rows.forEach((r) => {
+    r.fontH = r.wsum / r.wlen;
+    let best = '', n = -1;
+    for (const [k, v] of Object.entries(r.counts)) if (v > n) { n = v; best = k; }
+    r.family = fontFamilyOf[best] || '';
+  });
+
+  const frag = document.createDocumentFragment();
+  for (const r of rows) {
+    const w = Math.max(r.right - r.left, 4);
+    const h = r.fontH * 1.3;
+    const div = document.createElement('div');
+    div.className = 'txt';
+    div.textContent = r.text;
+    div.style.left = r.left.toFixed(2) + 'px';
+    div.style.top = r.top.toFixed(2) + 'px';
+    div.style.width = (w + 2).toFixed(2) + 'px';
+    div.style.height = h.toFixed(2) + 'px';
+    div.style.fontSize = r.fontH.toFixed(2) + 'px';
+    div.style.lineHeight = h.toFixed(2) + 'px';
+    div.dataset.original = r.text;
+    div.dataset.baseFont = r.fontH.toFixed(2);
+    // 记下原件字体，点开编辑时自动沿用；识别不出来就留空，用默认字体
+    if (r.family) div.dataset.family = r.family;
+    frag.appendChild(div);
+  }
+  layer.appendChild(frag);
+}
+
+/* ============ 表单字段 ============ */
+async function buildFormFields(page, vp, holder) {
+  let annots = [];
+  try { annots = await page.getAnnotations({ intent: 'display' }); } catch { return []; }
+
+  const fields = [];
+  for (const a of annots) {
+    const isWidget = a.subtype === 'Widget' || a.annotationType === 20;
+    if (!isWidget) continue;
+    if (a.fieldType === 'Sig' || !a.fieldName) continue;
+
+    const rect = a.rect;
+    if (!rect) continue;
+    const r = vp.convertToViewportRectangle(rect);
+    const left = Math.min(r[0], r[2]);
+    const top = Math.min(r[1], r[3]);
+    const w = Math.abs(r[2] - r[0]);
+    const h = Math.abs(r[3] - r[1]);
+    if (w < 3 || h < 3) continue;
+
+    const isCheck = a.fieldType === 'Btn' && (a.checkBox || a.radioButton);
+    const el = document.createElement(isCheck ? 'input' : 'input');
+    if (isCheck) {
+      el.type = 'checkbox';
+      el.checked = a.fieldValue === true || a.fieldValue === 'Yes' || a.buttonValue === a.fieldValue;
+    } else {
+      el.type = 'text';
+      el.value = typeof a.fieldValue === 'string' ? a.fieldValue : '';
+    }
+    el.className = 'ff';
+    el.style.left = left.toFixed(1) + 'px';
+    el.style.top = top.toFixed(1) + 'px';
+    el.style.width = Math.max(w, 12).toFixed(1) + 'px';
+    el.style.height = Math.max(h, 12).toFixed(1) + 'px';
+    el.style.fontSize = Math.max(8, Math.min(h * 0.66, 18)).toFixed(1) + 'px';
+
+    const rec = {
+      el, left, top, w, h,
+      type: isCheck ? 'check' : 'text',
+      value: isCheck ? (el.checked ? '✓' : '') : el.value,
+      fontSize: parseFloat(el.style.fontSize),
+    };
+    el.addEventListener('input', () => {
+      rec.value = isCheck ? (el.checked ? '✓' : '') : el.value;
+      updateMeta();
+    });
+    el.addEventListener('change', () => {
+      rec.value = isCheck ? (el.checked ? '✓' : '') : el.value;
+      updateMeta();
+    });
+
+    holder.appendChild(el);
+    fields.push(rec);
+  }
+  return fields;
+}
+
+/* ============ 渲染单页 ============ */
+async function renderPage(num, rotation = 0) {
+  const doc = pdfDoc;
+
+  const pw = document.createElement('div');
+  pw.className = 'pw';
+
+  const pageEl = document.createElement('div');
+  pageEl.className = 'page';
+
+  const canvas = document.createElement('canvas');
+  // 必须用 createElementNS，createElement('svg') 建出来的是未知元素，图形不会渲染
+  const shapes = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  shapes.setAttribute('class', 'shapes');
+  shapes.setAttribute('preserveAspectRatio', 'none');
+
+  const layer = document.createElement('div');
+  layer.className = 'layer';
+
+  const noteLayer = document.createElement('div');
+  noteLayer.className = 'annots';
+
+  const formLayer = document.createElement('div');
+  formLayer.className = 'annots';
+
+  const wmLayer = document.createElement('div');
+  wmLayer.className = 'annots';
+
+  pageEl.append(canvas, shapes, layer, noteLayer, formLayer, wmLayer);
+
+  const bar = document.createElement('div');
+  bar.className = 'pbar';
+  pw.append(pageEl, bar);
+  viewer.appendChild(pw);
+
+  const rec = {
+    doc, num, canvas, layer, shapes, noteLayer, formLayer, wmLayer, pw, pageEl, bar,
+    w: 0, h: 0, rot: rotation, dirty: false, annList: [], fields: [], deleted: false, blank: false,
+  };
+  byEl.set(pageEl, rec);
+  pages.push(rec);
+
+  await refreshPageView(rec);
+  rebuildBar(rec);
+  applyWatermark();
+  return rec;
+}
+
+/// 只重建某页的画面内容，保留外层 DOM。旋转和合并都靠它。
+async function refreshPageView(rec) {
+  const page = await rec.doc.getPage(rec.num);
+
+  const vpR = page.getViewport({ scale: RENDER_SCALE, rotation: rec.rot });
+  rec.canvas.width = Math.ceil(vpR.width);
+  rec.canvas.height = Math.ceil(vpR.height);
+  const ctx = rec.canvas.getContext('2d', { willReadFrequently: true });
+  ctx.clearRect(0, 0, rec.canvas.width, rec.canvas.height);
+  await page.render({ canvasContext: ctx, viewport: vpR }).promise;
+
+  const vpC = page.getViewport({ scale: DISPLAY_SCALE, rotation: rec.rot });
+  rec.w = vpC.width;
+  rec.h = vpC.height;
+  rec.pageEl.style.width = rec.w + 'px';
+  rec.pageEl.style.height = rec.h + 'px';
+  rec.canvas.style.width = rec.w + 'px';
+  rec.canvas.style.height = rec.h + 'px';
+  rec.shapes.setAttribute('viewBox', `0 0 ${rec.w} ${rec.h}`);
+
+  rec.layer.innerHTML = '';
+  await buildTextLayer(page, vpC, rec.layer);
+
+  rec.formLayer.innerHTML = '';
+  rec.fields = await buildFormFields(page, vpC, rec.formLayer);
+
+  redrawAnnots(rec);
+  applyWatermark();
+}
+
+/* ============ 页面工具条 ============ */
+function rebuildBar(rec) {
+  const idx = pages.filter((p) => !p.deleted).indexOf(rec);
+  rec.bar.innerHTML = '';
+  const live = pages.filter((p) => !p.deleted);
+  const num = document.createElement('span');
+  num.className = 'num';
+  num.textContent = `第 ${idx + 1} / ${live.length} 页`;
+  rec.bar.appendChild(num);
+
+  const mk = (text, title, fn, danger) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.textContent = text;
+    b.title = title;
+    if (danger) b.className = 'del';
+    b.onclick = fn;
+    rec.bar.appendChild(b);
+    return b;
+  };
+
+  mk('⟲', '逆时针旋转 90°', () => rotatePage(rec, -90));
+  mk('⟳', '顺时针旋转 90°', () => rotatePage(rec, 90));
+  mk('↑', '上移一页', () => movePage(rec, -1));
+  mk('↓', '下移一页', () => movePage(rec, 1));
+  const del = mk('删除本页', '从导出结果中删除这一页', () => {
+    rec.deleted = true;
+    rec.pw.style.display = 'none';
+    pageOps++;
+    refreshBars();
+    updateMeta();
+    setStat('已删除一页，可继续操作或直接导出', 'ok');
+  }, true);
+  del.dataset.del = '1';
+}
+
+function refreshBars() {
+  pages.forEach((p) => { if (!p.deleted) rebuildBar(p); });
+}
+
+function syncDomOrder() {
+  // 按 pages 数组顺序重排 DOM，保证「界面看到的顺序」== 「导出的顺序」
+  pages.forEach((p) => viewer.appendChild(p.pw));
+}
+
+function movePage(rec, delta) {
+  const live = pages.filter((p) => !p.deleted);
+  const i = live.indexOf(rec);
+  const j = i + delta;
+  if (j < 0 || j >= live.length) return;
+  const target = live[j];
+  const ai = pages.indexOf(rec);
+  const bi = pages.indexOf(target);
+  pages[ai] = target;
+  pages[bi] = rec;
+  syncDomOrder();
+  pageOps++;
+  refreshBars();
+  updateMeta();
+}
+
+async function rotatePage(rec, delta) {
+  if (rec.blank) { setStat('空白页不用旋转', 'warn'); return; }
+  const oldW = rec.w, oldH = rec.h;
+  rec.rot = ((rec.rot + delta) % 360 + 360) % 360;
+  rec.annList = rec.annList.map((a) => rotateAnnot(a, oldW, oldH, delta > 0));
+  setBusy(true, '正在旋转…');
+  try {
+    await refreshPageView(rec);
+    pageOps++;
+    rebuildBar(rec);
+    updateMeta();
+    setStat(`已旋转到 ${rec.rot}°`, 'ok');
+  } catch (e) {
+    setStat('旋转失败：' + (e.message || e), 'err');
+  } finally { setBusy(false); }
+}
+
+function rotateAnnot(a, W, H, cw) {
+  if (a.kind === 'arrow') {
+    const p1 = cw ? { x: H - a.y1, y: a.x1 } : { x: a.y1, y: W - a.x1 };
+    const p2 = cw ? { x: H - a.y2, y: a.x2 } : { x: a.y2, y: W - a.x2 };
+    return { ...a, x1: p1.x, y1: p1.y, x2: p2.x, y2: p2.y };
+  }
+  const left = cw ? H - (a.top + a.height) : a.top;
+  const top = cw ? a.left : W - (a.left + a.width);
+  return { ...a, left, top, width: a.height, height: a.width };
+}
+
+/* ============ 批注绘制 ============ */
+function drawAnnot(rec, a) {
+  if (a.kind === 'note') {
+    let el = a._el;
+    if (!el) {
+      el = document.createElement('div');
+      el.className = 'note';
+      el.contentEditable = 'true';
+      el.dataset.original = a.text || '';
+      el.textContent = a.text || '批注';
+      el.addEventListener('input', () => { a.text = el.innerText; });
+      el.addEventListener('blur', () => { a.text = el.innerText.replace(/\n+$/, ''); });
+      a._el = el;
+      rec.noteLayer.appendChild(el);
+    }
+    el.style.left = a.left.toFixed(1) + 'px';
+    el.style.top = a.top.toFixed(1) + 'px';
+    el.style.width = Math.max(a.width, 60).toFixed(1) + 'px';
+    el.style.minHeight = Math.max(a.height, 24).toFixed(1) + 'px';
+    return;
+  }
+
+  let el = a._el;
+  if (!el) {
+    const ns = 'http://www.w3.org/2000/svg';
+    if (a.kind === 'highlight') el = document.createElementNS(ns, 'rect');
+    else if (a.kind === 'box') el = document.createElementNS(ns, 'rect');
+    else if (a.kind === 'ellipse') el = document.createElementNS(ns, 'ellipse');
+    else if (a.kind === 'arrow') el = document.createElementNS(ns, 'line');
+    else el = document.createElementNS(ns, 'rect');
+    a._el = el;
+    rec.shapes.appendChild(el);
+  }
+
+  const k = a.kind;
+  if (k === 'highlight') {
+    el.setAttribute('x', a.left); el.setAttribute('y', a.top);
+    el.setAttribute('width', Math.max(a.width, 1)); el.setAttribute('height', Math.max(a.height, 1));
+    el.setAttribute('fill', a.color); el.setAttribute('fill-opacity', a.opacity ?? 0.32);
+  } else if (k === 'box') {
+    el.setAttribute('x', a.left); el.setAttribute('y', a.top);
+    el.setAttribute('width', Math.max(a.width, 1)); el.setAttribute('height', Math.max(a.height, 1));
+    el.setAttribute('fill', 'none'); el.setAttribute('stroke', a.color);
+    el.setAttribute('stroke-width', a.thickness ?? 2);
+    if (a.dashed) el.setAttribute('stroke-dasharray', '6 4'); else el.removeAttribute('stroke-dasharray');
+  } else if (k === 'ellipse') {
+    el.setAttribute('cx', a.left + a.width / 2); el.setAttribute('cy', a.top + a.height / 2);
+    el.setAttribute('rx', Math.max(a.width / 2, 1)); el.setAttribute('ry', Math.max(a.height / 2, 1));
+    el.setAttribute('fill', 'none'); el.setAttribute('stroke', a.color);
+    el.setAttribute('stroke-width', a.thickness ?? 2);
+  } else if (k === 'arrow') {
+    el.setAttribute('x1', a.x1); el.setAttribute('y1', a.y1);
+    el.setAttribute('x2', a.x2); el.setAttribute('y2', a.y2);
+    el.setAttribute('stroke', a.color); el.setAttribute('stroke-width', a.thickness ?? 2);
+    el.setAttribute('marker-end', 'url(#ahd)');
+  } else {
+    // underline / strike
+    el.setAttribute('x', a.left); el.setAttribute('y', a.top);
+    el.setAttribute('width', Math.max(a.width, 1)); el.setAttribute('height', Math.max(a.thickness ?? 2, 1));
+    el.setAttribute('fill', a.color);
+  }
+}
+
+function ensureMarker(rec) {
+  if (rec.shapes.querySelector('#ahd')) return;
+  const ns = 'http://www.w3.org/2000/svg';
+  const defs = document.createElementNS(ns, 'defs');
+  const mk = document.createElementNS(ns, 'marker');
+  mk.setAttribute('id', 'ahd');
+  mk.setAttribute('viewBox', '0 0 10 10');
+  mk.setAttribute('refX', '8'); mk.setAttribute('refY', '5');
+  mk.setAttribute('markerWidth', '5'); mk.setAttribute('markerHeight', '5');
+  mk.setAttribute('orient', 'auto-start-reverse');
+  const p = document.createElementNS(ns, 'path');
+  p.setAttribute('d', 'M1 1L8 5L1 9');
+  p.setAttribute('fill', 'none');
+  p.setAttribute('stroke', 'context-stroke');
+  p.setAttribute('stroke-width', '1.8');
+  p.setAttribute('stroke-linecap', 'round');
+  p.setAttribute('stroke-linejoin', 'round');
+  mk.appendChild(p); defs.appendChild(mk); rec.shapes.appendChild(defs);
+}
+
+function redrawAnnots(rec) {
+  ensureMarker(rec);
+  rec.noteLayer.innerHTML = '';
+  [...rec.shapes.querySelectorAll('rect,line,ellipse')].forEach((e) => e.remove());
+  rec.annList.forEach((a) => { a._el = null; drawAnnot(rec, a); });
+}
+
+function annotPreview(rec, start, cur) {
+  let prev = rec.shapes.querySelector('#preview');
+  if (!prev) {
+    const ns = 'http://www.w3.org/2000/svg';
+    prev = document.createElementNS(ns, tool === 'arrow' ? 'line' : 'rect');
+    prev.setAttribute('id', 'preview');
+    prev.setAttribute('fill', tool === 'highlight' ? color : 'none');
+    prev.setAttribute('fill-opacity', '0.32');
+    prev.setAttribute('stroke', color);
+    prev.setAttribute('stroke-width', '1.5');
+    prev.setAttribute('stroke-dasharray', '5 4');
+    rec.shapes.appendChild(prev);
+  }
+  if (tool === 'arrow') {
+    prev.setAttribute('x1', start.x); prev.setAttribute('y1', start.y);
+    prev.setAttribute('x2', cur.x); prev.setAttribute('y2', cur.y);
+  } else {
+    prev.setAttribute('x', Math.min(start.x, cur.x));
+    prev.setAttribute('y', Math.min(start.y, cur.y));
+    prev.setAttribute('width', Math.abs(cur.x - start.x));
+    prev.setAttribute('height', Math.abs(cur.y - start.y));
+  }
+}
+
+function commitAnnot(rec, start, cur) {
+  const pv = rec.shapes.querySelector('#preview');
+  if (pv) pv.remove();
+
+  const x = Math.min(start.x, cur.x), y = Math.min(start.y, cur.y);
+  const w = Math.abs(cur.x - start.x), h = Math.abs(cur.y - start.y);
+
+  let a = null;
+  if (tool === 'highlight' && w > 2 && h > 2) {
+    a = { kind: 'highlight', left: x, top: y, width: w, height: h, color, opacity: 0.32 };
+  } else if (tool === 'box' && w > 2 && h > 2) {
+    a = { kind: 'box', left: x, top: y, width: w, height: h, color, thickness: 2 };
+  } else if (tool === 'ellipse' && w > 2 && h > 2) {
+    a = { kind: 'ellipse', left: x, top: y, width: w, height: h, color, thickness: 2 };
+  } else if (tool === 'underline' && w > 2) {
+    a = { kind: 'rule', left: x, top: y + h - 2, width: w, height: 2, thickness: 2, color };
+  } else if (tool === 'strike' && w > 2) {
+    a = { kind: 'rule', left: x, top: y + h / 2, width: w, height: 2, thickness: 2, color };
+  } else if (tool === 'arrow' && Math.hypot(cur.x - start.x, cur.y - start.y) > 5) {
+    a = { kind: 'arrow', x1: start.x, y1: start.y, x2: cur.x, y2: cur.y, color, thickness: 2 };
+  }
+  if (!a) return;
+  rec.annList.push(a);
+  drawAnnot(rec, a);
+  updateMeta();
+  setStat(`已添加${toolName(tool)}，共 ${rec.annList.length} 处`, 'ok');
+}
+
+function toolName(t) {
+  return { highlight: '高亮', underline: '下划线', strike: '删除线', box: '矩形', ellipse: '圈选', arrow: '箭头', note: '便签' }[t] || t;
+}
+
+/* ============ 水印 ============ */
+function applyWatermark() {
+  pages.forEach((rec) => {
+    if (rec.deleted) return;
+    if (!wm.on || !wm.text.trim()) { rec.wmLayer.innerHTML = ''; return; }
+    rec.wmLayer.innerHTML = watermarkSVG(rec.w, rec.h, wm);
+  });
+}
+
+/* ============ 模式切换 ============ */
+const BARS = { text: '#barText', annot: '#barAnnot', form: '#barForm', page: '#barPage', watermark: '#barWm' };
+const TIPS = {
+  text: '点任意一行文字即可修改',
+  annot: '选好工具后在页面上拖拽即可；便签是单击放置',
+  form: '浅蓝色框是检测到的表单字段',
+  page: '可删除、旋转、调顺序，导出顺序与这里一致',
+  watermark: '水印会应用到所有页，可实时预览',
+};
+function setMode(m) {
+  mode = m;
+  $$('.tab').forEach((b) => b.classList.toggle('on', b.dataset.mode === m));
+  Object.entries(BARS).forEach(([k, sel]) => $(sel).classList.toggle('on', k === m));
+  $('#modeTip').textContent = TIPS[m] || '';
+  viewer.classList.toggle('annot-mode', m === 'annot');
+  // 批注模式下文字层不拦截鼠标，否则划不动
+  pages.forEach((rec) => {
+    rec.layer.style.pointerEvents = m === 'text' ? 'auto' : 'none';
+    rec.formLayer.style.pointerEvents = m === 'form' ? 'auto' : 'none';
+    rec.noteLayer.style.pointerEvents = m === 'annot' ? 'auto' : 'none';
+  });
+}
+
+/* ============ 事件 ============ */
+viewer.addEventListener('mousedown', (e) => {
+  const pageEl = e.target.closest('.page');
+  const rec = pageEl && byEl.get(pageEl);
+
+  if (mode === 'text') {
+    const div = e.target.closest('.txt');
+    if (!div) { if (editingEl) finishEdit(editingEl); return; }
+    if (div === editingEl) return;
+    e.preventDefault();
+    if (editingEl) finishEdit(editingEl);
+    startEdit(div, rec, e);
+    return;
+  }
+
+  if (mode !== 'annot' || !rec) return;
+  e.preventDefault();
+  const r = pageEl.getBoundingClientRect();
+  const pt = { x: e.clientX - r.left, y: e.clientY - r.top };
+
+  if (tool === 'note') {
+    const a = { kind: 'note', left: pt.x, top: pt.y, width: 150, height: 46, text: '批注内容…', color: '#d9a441', fontSize: 12 };
+    rec.annList.push(a);
+    drawAnnot(rec, a);
+    a._el && a._el.focus();
+    updateMeta();
+    return;
+  }
+  drag = { rec, start: pt };
+  ensureMarker(rec);
+});
+
+window.addEventListener('mousemove', (e) => {
+  if (!drag) return;
+  const r = drag.rec.pageEl.getBoundingClientRect();
+  const cur = {
+    x: Math.max(0, Math.min(e.clientX - r.left, drag.rec.w)),
+    y: Math.max(0, Math.min(e.clientY - r.top, drag.rec.h)),
+  };
+  annotPreview(drag.rec, drag.start, cur);
+});
+
+window.addEventListener('mouseup', (e) => {
+  if (!drag) return;
+  const r = drag.rec.pageEl.getBoundingClientRect();
+  const cur = {
+    x: Math.max(0, Math.min(e.clientX - r.left, drag.rec.w)),
+    y: Math.max(0, Math.min(e.clientY - r.top, drag.rec.h)),
+  };
+  commitAnnot(drag.rec, drag.start, cur);
+  drag = null;
+});
+
+function startEdit(div, rec, ev) {
+  if (!div.dataset.bg) {
+    const { bg, fg } = sampleBg(rec.canvas, parseFloat(div.style.left), parseFloat(div.style.top),
+      parseFloat(div.style.width), parseFloat(div.style.height));
+    div.dataset.bg = bg;
+    if (!div.dataset.fg) div.dataset.fg = fg;
+  }
+  div.style.background = div.dataset.bg;
+  div.style.setProperty('--fg', div.dataset.fg || '#111111');
+  // 用原件字体来编辑，改出来的字才和周围一致；
+  // 用户手动选过字体就以选择为准，不再被原件字体覆盖
+  if (!div.style.fontFamily) {
+    const fam = fontPinned ? textFont : (div.dataset.family || textFont);
+    if (fam) div.style.fontFamily = fam;
+  }
+
+  div.contentEditable = 'true';
+  div.classList.add('focus');
+  editingEl = div;
+  div.focus();
+
+  if (ev) {
+    try {
+      const range = document.caretRangeFromPoint(ev.clientX, ev.clientY);
+      if (range) { const s = window.getSelection(); s.removeAllRanges(); s.addRange(range); }
+    } catch { }
+  }
+  syncTextTools(div);
+}
+
+/// 把当前行的样式同步到工具栏，避免工具条显示的状态和实际不符
+function syncTextTools(div) {
+  $('#fsVal').textContent = Math.round(parseFloat(div.style.fontSize)) + '';
+  $('#btnBold').classList.toggle('on', div.dataset.bold === '1');
+
+  const fg = div.dataset.fg;
+  if (fg) {
+    textColor = fg;
+    [...tcBox.children].forEach((x) => x.classList.toggle('on', x.dataset.c === fg));
+  }
+  const fam = div.style.fontFamily;
+  if (fam) {
+    const sel = $('#fontSel');
+    if ([...sel.options].some((o) => o.value === fam)) sel.value = fam;
+  }
+}
+
+function restoreBlock(div) {
+  div.textContent = div.dataset.original || '';
+  div.classList.remove('dirty');
+  div.style.background = '';
+  div.style.fontWeight = '';
+  div.style.fontFamily = '';
+  div.style.whiteSpace = '';
+  div.style.removeProperty('--fg');
+  delete div.dataset.fg;
+  delete div.dataset.bold;
+  const base = parseFloat(div.dataset.baseFont || div.style.fontSize) || 12;
+  div.style.fontSize = base.toFixed(2) + 'px';
+  div.style.lineHeight = (base * 1.3).toFixed(2) + 'px';
+  div.style.height = (base * 1.3).toFixed(2) + 'px';
+  // 合并时为了容纳多行设过 minHeight，不撤掉的话高度会被它撑住
+  div.style.minHeight = '';
+  if (div.dataset.origWidth) {
+    div.style.width = div.dataset.origWidth;
+    delete div.dataset.origWidth;
+  }
+  if (div.dataset.origLeft) {
+    div.style.left = div.dataset.origLeft;
+    delete div.dataset.origLeft;
+  }
+  div.style.textIndent = '';
+  if (div.dataset.mergedCount) delete div.dataset.mergedCount;
+  delete div.dataset.lastLeft;
+  delete div.dataset.lineGap;
+}
+
+function finishEdit(div) {
+  if (!div) return;
+  div.contentEditable = 'false';
+  div.classList.remove('focus');
+
+  const text = (div.innerText || '').replace(/\n+$/, '');
+  const changed = text.trim() !== (div.dataset.original || '').trim();
+  const styled = div.classList.contains('dirty');   // 颜色/字体/加粗改过
+
+  if (!changed && !styled) {
+    restoreBlock(div);
+  } else {
+    if (!div.classList.contains('dirty')) dirtyCount++;
+    div.classList.add('dirty');
+    fitToWidth(div);
+  }
+  editingEl = null;
+  lastEdited = div;
+  updateMeta();
+}
+
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && editingEl) { finishEdit(editingEl); e.preventDefault(); }
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
+    e.preventDefault();
+    if (!btnSave.disabled && !busy) exportPdf();
+  }
+});
+
+/* ============ 工具栏动作 ============ */
+/* 工具栏上的按钮不能抢焦点，否则正在编辑的那一行会先失焦，动作就作用到空对象上了 */
+document.addEventListener('mousedown', (e) => {
+  const bar = e.target.closest('.bar');
+  if (!bar) return;
+  const tag = e.target.tagName;
+  if (tag === 'INPUT' || tag === 'SELECT' || tag === 'OPTION' || tag === 'TEXTAREA') return;
+  e.preventDefault();
+});
+
+function activeTextBlock() {
+  if (editingEl) return editingEl;
+  if (lastEdited && lastEdited.isConnected) return lastEdited;
+  return null;
+}
+
+$('#fsPlus').onclick = () => nudgeFont(0.5);
+$('#fsMinus').onclick = () => nudgeFont(-0.5);
+
+function nudgeFont(d) {
+  const div = activeTextBlock();
+  if (!div) { setStat('先点一行文字，再调字号', 'warn'); return; }
+  const cur = parseFloat(div.style.fontSize) || 12;
+  const next = Math.max(5, Math.min(72, cur + d));
+  div.style.fontSize = next.toFixed(2) + 'px';
+  div.style.lineHeight = (next * 1.3).toFixed(2) + 'px';
+  if (!div.dataset.mergedCount) div.style.height = (next * 1.3).toFixed(2) + 'px';
+  markDirty(div);
+  $('#fsVal').textContent = Math.round(next) + '';
+  if (editingEl === div) finishEdit(div);
+}
+
+$('#btnBold').onclick = () => {
+  const div = activeTextBlock();
+  if (!div) { setStat('先点一行文字，再设粗体', 'warn'); return; }
+  const on = div.dataset.bold !== '1';
+  div.dataset.bold = on ? '1' : '0';
+  div.style.fontWeight = on ? '700' : '400';
+  $('#btnBold').classList.toggle('on', on);
+  markDirty(div);
+  fitToWidth(div);
+  if (editingEl === div) finishEdit(div);
+};
+
+/* 文字颜色 */
+const TEXT_COLORS = ['#111111', '#4a4a4a', '#8c8c8c', '#ffffff', '#c62828', '#1565c0', '#2e7d32', '#ef6c00'];
+const tcBox = $('#textColors');
+TEXT_COLORS.forEach((c, i) => {
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.className = 'sq' + (i === 0 ? ' on' : '');
+  b.style.background = c;
+  if (c === '#ffffff') b.style.borderColor = '#8a8a8a';
+  b.dataset.c = c;
+  b.title = c;
+  b.onclick = () => {
+    textColor = c;
+    [...tcBox.children].forEach((x) => x.classList.toggle('on', x === b));
+    const div = activeTextBlock();
+    if (!div) return;
+    div.dataset.fg = c;
+    div.style.setProperty('--fg', c);
+    markDirty(div);
+    setStat('文字颜色已改为 ' + c, 'ok');
+  };
+  tcBox.appendChild(b);
+});
+
+/* 字体 */
+$('#fontSel').onchange = (e) => {
+  textFont = e.target.value;
+  fontPinned = true;   // 从此以后新块用这个字体，不再回落到原件字体
+  const div = activeTextBlock();
+  if (!div) return;
+  div.style.fontFamily = textFont;
+  markDirty(div);
+  fitToWidth(div);
+  setStat('已切换字体', 'ok');
+};
+
+/* 自动适应宽度开关 */
+$('#btnFit').onclick = () => {
+  autoFit = !autoFit;
+  $('#btnFit').classList.toggle('on', autoFit);
+  if (autoFit) {
+    viewer.querySelectorAll('.txt.dirty').forEach((d) => fitToWidth(d));
+    setStat('已开启自动适应：文字超宽时自动缩小字号', 'ok');
+  } else {
+    setStat('已关闭自动适应：文字超宽会换行显示', 'warn');
+  }
+};
+
+/* ============ 行合并 ============ */
+
+/// 同一页里还没被合并掉的文字块，按视觉顺序排列
+function liveTexts(rec) {
+  return [...rec.layer.querySelectorAll('.txt')]
+    .filter((d) => !d.dataset.merged && d.style.display !== 'none');
+}
+
+/// 本页「满行」宽度：取所有行宽的四分之三分位，比最大值更抗标题、页码这类短行干扰
+function fullLineWidth(rec) {
+  const ws = liveTexts(rec)
+    .map((d) => parseFloat(d.style.width) || 0)
+    .filter((w) => w > 4)
+    .sort((a, b) => a - b);
+  return ws.length ? ws[Math.floor(ws.length * 0.75)] : 0;
+}
+
+/// 把紧挨着的下一行吞进 div。返回 {ok, next, why}
+/// why: end（到底了）/ gap（不相邻）/ indent（下一行是缩进的新段）/ 空表示成功
+function absorbNext(div, rec) {
+  const all = liveTexts(rec);
+  const next = all[all.indexOf(div) + 1];
+  if (!next) return { ok: false, why: 'end' };
+
+  const size = parseFloat(div.style.fontSize) || 12;
+  const curBottom = parseFloat(div.style.top) + parseFloat(div.style.height);
+  const nextTop = parseFloat(next.style.top);
+  // 行距的容差跟着字号走，大字号文档的行间距本来就宽。
+  // 系数 1.6 是按「行距最多到字号的 2.9 倍」留的余量：再宽了就该当空行处理。
+  if (nextTop - curBottom > Math.max(16, size * 1.6)) return { ok: false, why: 'gap' };
+
+  // 缩进要跟「块的最后一行」比，不能跟块自己的 left 比 ——
+  // 从段首行开始合并时，段的 left 是缩进后的位置，跟下一行比只会是负数，永远触发不了。
+  const lastLeft = parseFloat(div.dataset.lastLeft || div.style.left);
+  const indent = parseFloat(next.style.left) - lastLeft;
+  if (indent >= size * 0.9) return { ok: false, why: 'indent' };
+
+  const a = (div.innerText || '').replace(/\n+$/, '');
+  const b = next.dataset.original || next.textContent || '';
+  const sep = /[A-Za-z0-9]$/.test(a) && /^[A-Za-z0-9]/.test(b) ? ' ' : '';
+  div.textContent = a + sep + b;
+
+  // 在改几何之前标脏：这时块还是单行的高度，采样到的底色最准
+  markDirty(div);
+
+  const top = parseFloat(div.style.top);
+  const newH = nextTop + parseFloat(next.style.height) - top;
+  div.style.height = newH.toFixed(2) + 'px';
+  div.style.minHeight = newH.toFixed(2) + 'px';
+  div.dataset.mergedCount = String((+div.dataset.mergedCount || 0) + 1);
+  div.dataset.lastLeft = next.style.left;
+
+  // 原始几何先存下来，撤销时要还原
+  if (!div.dataset.origWidth) {
+    div.dataset.origWidth = div.style.width;
+    div.dataset.origLeft = div.style.left;
+  }
+
+  // 行距照原文来。默认的 fontSize*1.3 会比原件紧，重排后和上下文一眼就能看出不一样
+  if (!div.dataset.lineGap) {
+    const gap = nextTop - top;
+    if (gap > size * 1.05 && gap < size * 3) {
+      div.dataset.lineGap = gap.toFixed(2);
+      div.style.lineHeight = gap.toFixed(2) + 'px';
+    }
+  }
+
+  // 段首行缩进会让块比后续行窄。左边界必须往左撑到最左那行，
+  // 否则遮罩盖不住后续行的左端，被覆盖的原字会从左边露出来。
+  // 首行缩进改用 text-indent 表达，视觉上不变，遮罩却能盖全。
+  const left = parseFloat(div.style.left);
+  const nextLeft = parseFloat(next.style.left);
+  if (nextLeft < left - 1) {
+    const prevIndent = parseFloat(div.style.textIndent) || 0;
+    div.style.textIndent = (prevIndent + (left - nextLeft)).toFixed(2) + 'px';
+    div.style.left = nextLeft.toFixed(2) + 'px';
+  }
+
+  // 宽度按「最右端 − 最左端」撑开，保证重排后有完整行宽
+  const curLeft = parseFloat(div.style.left);
+  const curW = parseFloat(div.style.width) || 0;
+  const nextRight = nextLeft + (parseFloat(next.style.width) || 0);
+  const maxRight = Math.max(left + curW, nextRight);
+  if (maxRight > curLeft + curW + 1) {
+    div.style.width = (maxRight - curLeft).toFixed(2) + 'px';
+  }
+
+  next.dataset.merged = '1';
+  next.style.display = 'none';
+
+  return { ok: true, next };
+}
+
+const MERGE_WHY = {
+  end: '下面已经没有可合并的行了',
+  gap: '下一行不相邻（中间有空行或跨页），合并到这里为止',
+  indent: '下一行有首行缩进，看起来是新的一段',
+};
+
+function mergeNextLine(div) {
+  const rec = pageOf(div);
+  if (!rec) return false;
+  const r = absorbNext(div, rec);
+  if (!r.ok) { setStat(MERGE_WHY[r.why] || '无法合并', 'warn'); return false; }
+  setStat('已并入下一行，现在可以自由换行编辑', 'ok');
+  return true;
+}
+
+/* 并入整段：一路吞到段落结束。
+   中文 PDF 里没有真正的「段落」结构，只能靠排版特征倒推，四条止步线：
+   1. 行间距突然变大（空行、跨页）
+   2. 下一行有首行缩进（新段的第一行）
+   3. 刚吞进来的那一行是短尾行（段落最后一行通常不满宽）
+   4. 单次上限 40 行，防止异常坐标把整页吃进去 */
+function mergeParagraph(div) {
+  const rec = pageOf(div);
+  if (!rec) return null;
+
+  const full = fullLineWidth(rec);
+  const startW = parseFloat(div.style.width) || 0;
+  // 已经合并过的块不再拿首行宽度当判据，那只是它第一行的宽度
+  const startShort = !div.dataset.mergedCount && full > 0 && startW < full * 0.88;
+
+  // 从标题、段末短行开始整段吞，判断依据会失真（它们本来就不满宽），
+  // 结果往往是一路吃到下一段。这种情况让用户显式用「并入下一行」。
+  if (startShort) {
+    setStat('这一行像是标题或段末短行，整段合并会越过段落；只想合入下一行请用「并入下一行」', 'warn');
+    return null;
+  }
+
+  let count = 0;
+  let why = '';
+  // 最多吞 40 行：防止异常坐标把整页吃进去
+  while (count < 40) {
+    const r = absorbNext(div, rec);
+    if (!r.ok) { why = r.why; break; }
+    count++;
+    // 段末短行：这一行明显没排满，段落到此结束
+    const w = parseFloat(r.next.style.width) || 0;
+    if (full > 0 && w < full * 0.88) { why = 'short'; break; }
+  }
+
+  if (count === 0) {
+    setStat(MERGE_WHY[why] || '这一行下面没有可合并的内容', 'warn');
+    return null;
+  }
+
+  const tail =
+    why === 'short' ? '已排到段末' :
+    why === 'indent' ? '下一行是新段开头' :
+    why === 'gap' ? '下一行不相邻' :
+    why === 'end' ? '本页到底' : '已达单次上限 40 行';
+  setStat(`已并入 ${count} 行，${tail}，现在可以整段重排`, 'ok');
+  return count;
+}
+
+$('#btnMergeNext').onclick = () => {
+  const div = activeTextBlock();
+  if (!div) { setStat('先点一行文字，再并入下一行', 'warn'); return; }
+  if (editingEl) finishEdit(editingEl);
+  if (!mergeNextLine(div)) return;
+  const rec = pageOf(div);
+  if (rec) startEdit(div, rec, null);
+};
+
+$('#btnMergePara').onclick = () => {
+  const div = activeTextBlock();
+  if (!div) { setStat('先点一行文字，再并入整段', 'warn'); return; }
+  if (editingEl) finishEdit(editingEl);
+  if (!mergeParagraph(div)) return;
+  const rec = pageOf(div);
+  if (rec) startEdit(div, rec, null);
+};
+$('#btnResetText').onclick = () => {
+  if (editingEl) finishEdit(editingEl);
+  if (!dirtyCount) { setStat('没有需要撤销的改动', 'warn'); return; }
+  // 先把被合并掉的行还原出来，再复原各块
+  viewer.querySelectorAll('.txt[data-merged]').forEach((d) => {
+    d.style.display = '';
+    delete d.dataset.merged;
+  });
+  viewer.querySelectorAll('.txt.dirty').forEach((d) => restoreBlock(d));
+  dirtyCount = 0;
+  lastEdited = null;
+  updateMeta();
+  setStat('已撤销全部文字改动', 'ok');
+};
+
+$$('.tab').forEach((b) => { b.onclick = () => setMode(b.dataset.mode); });
+
+$$('#barAnnot [data-tool]').forEach((b) => {
+  b.onclick = () => {
+    tool = b.dataset.tool;
+    $$('#barAnnot [data-tool]').forEach((x) => x.classList.toggle('on', x === b));
+  };
+});
+
+const sw = $('#swatches');
+COLORS.forEach((c, i) => {
+  const b = document.createElement('button');
+  b.type = 'button'; b.className = 'sq' + (i === 0 ? ' on' : '');
+  b.style.background = c;
+  b.onclick = () => {
+    color = c;
+    [...sw.children].forEach((x) => x.classList.toggle('on', x === b));
+  };
+  sw.appendChild(b);
+});
+
+$('#btnClearAnnot').onclick = () => {
+  // 找到当前视口里最靠上的那一页
+  const rec = pages
+    .filter((p) => !p.deleted)
+    .find((p) => {
+      const r = p.pageEl.getBoundingClientRect();
+      return r.bottom > 120 && r.top < window.innerHeight;
+    });
+  if (!rec) { setStat('先滚动到要处理的页面', 'warn'); return; }
+  if (!rec.annList.length) { setStat('这一页没有批注', 'warn'); return; }
+  rec.annList = [];
+  redrawAnnots(rec);
+  updateMeta();
+  setStat('已清空本页批注', 'ok');
+};
+
+$('#btnClearForm').onclick = () => {
+  pages.forEach((rec) => rec.fields.forEach((f) => {
+    f.value = '';
+    if (f.type === 'check') { f.el.checked = false; } else { f.el.value = ''; }
+  }));
+  updateMeta();
+  setStat('已清空所有填写', 'ok');
+};
+
+$('#btnAddBlank').onclick = () => {
+  const ref = pages.find((p) => !p.deleted) || pages[0];
+  if (!ref) return;
+  const w = ref.w, h = ref.h;
+  const pw = document.createElement('div');
+  pw.className = 'pw';
+  const pageEl = document.createElement('div');
+  pageEl.className = 'page';
+  pageEl.style.width = w + 'px'; pageEl.style.height = h + 'px';
+
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.ceil(w * RENDER_SCALE / DISPLAY_SCALE);
+  canvas.height = Math.ceil(h * RENDER_SCALE / DISPLAY_SCALE);
+  canvas.style.width = w + 'px'; canvas.style.height = h + 'px';
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
+  ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  const shapes = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  shapes.setAttribute('class', 'shapes');
+  shapes.setAttribute('viewBox', `0 0 ${w} ${h}`);
+  shapes.setAttribute('preserveAspectRatio', 'none');
+  const layer = document.createElement('div'); layer.className = 'layer';
+  const noteLayer = document.createElement('div'); noteLayer.className = 'annots';
+  const formLayer = document.createElement('div'); formLayer.className = 'annots';
+  const wmLayer = document.createElement('div'); wmLayer.className = 'annots';
+
+  pageEl.append(canvas, shapes, layer, noteLayer, formLayer, wmLayer);
+  const bar = document.createElement('div'); bar.className = 'pbar';
+  pw.append(pageEl, bar);
+  viewer.appendChild(pw);
+
+  const rec = {
+    num: 0, canvas, layer, shapes, noteLayer, formLayer, wmLayer, pw, pageEl, bar,
+    w, h, rot: 0, dirty: false, annList: [], fields: [], deleted: false, blank: true,
+  };
+  byEl.set(pageEl, rec);
+  pages.push(rec);
+  pageOps++;
+  refreshBars(); applyWatermark(); updateMeta();
+  setStat('已插入空白页', 'ok');
+};
+
+$('#btnMerge').onclick = () => $('#mergeInput').click();
+$('#mergeInput').onchange = async (e) => {
+  const f = e.target.files[0];
+  e.target.value = '';
+  if (!f || busy) return;
+  setBusy(true, '正在合并…');
+  try {
+    const buf = await f.arrayBuffer();
+    const doc2 = await pdfjsLib.getDocument({
+      data: new Uint8Array(buf), cMapUrl: '/vendor/cmaps/', cMapPacked: true,
+      standardFontDataUrl: '/vendor/standard_fonts/',
+    }).promise;
+    const keep = pdfDoc;
+    pdfDoc = doc2;
+    for (let i = 1; i <= doc2.numPages; i++) {
+      setBusy(true, `合并中 ${i} / ${doc2.numPages}…`);
+      await renderPage(i, 0);
+    }
+    // 恢复后续操作仍然指向合理状态（合并后以新文档为渲染源，后续不再支持旋转原页）
+    pdfDoc = doc2;
+    pageOps++;
+    refreshBars(); applyWatermark(); updateMeta();
+    setStat(`已合并 ${doc2.numPages} 页，共 ${pages.filter((p) => !p.deleted).length} 页`, 'ok');
+  } catch (err) {
+    setStat('合并失败：' + (err.message || err), 'err');
+  } finally { setBusy(false); }
+};
+
+// 水印控件
+const wmText = $('#wmText'), wmSize = $('#wmSize'), wmOp = $('#wmOpacity'), wmAng = $('#wmAngle');
+function syncWm() {
+  wm.text = wmText.value || '';
+  wm.size = +wmSize.value;
+  wm.opacity = +wmOp.value / 100;
+  wm.angle = +wmAng.value;
+  $('#wmSizeVal').textContent = wm.size;
+  $('#wmOpacityVal').textContent = wmOp.value + '%';
+  $('#wmAngleVal').textContent = wm.angle + '°';
+  applyWatermark();
+}
+[wmText, wmSize, wmOp, wmAng].forEach((el) => el.addEventListener('input', syncWm));
+$('#btnWmToggle').onclick = () => {
+  wm.on = !wm.on;
+  $('#btnWmToggle').classList.toggle('on', wm.on);
+  $('#btnWmToggle').textContent = wm.on ? '取消水印' : '应用水印';
+  applyWatermark();
+  setStat(wm.on ? '水印已应用到所有页' : '已取消水印', 'ok');
+};
+
+/* ============ 打开文件 ============ */
+async function loadPdf(file) {
+  if (!file || busy) return;
+  if (!/\.pdf$/i.test(file.name) && file.type !== 'application/pdf') {
+    setStat('只支持 PDF 文件', 'err'); return;
+  }
+  setBusy(true, '正在读取…');
+  try {
+    const buf = await file.arrayBuffer();
+    pdfDoc = await pdfjsLib.getDocument({
+      data: new Uint8Array(buf), cMapUrl: '/vendor/cmaps/', cMapPacked: true,
+      standardFontDataUrl: '/vendor/standard_fonts/',
+    }).promise;
+
+    sourceName = file.name.replace(/\.pdf$/i, '');
+    viewer.innerHTML = '';
+    pages = []; dirtyCount = 0; pageOps = 0;
+    fontPinned = false;
+    textFont = "'Microsoft YaHei','微软雅黑',sans-serif";
+    $('#fontSel').value = textFont;
+
+    intro.style.display = 'none';
+    viewer.classList.add('on');
+    tabs.hidden = false;
+    btnSave.disabled = false;
+    setMode('text');
+    setStat(`已加载 ${pdfDoc.numPages} 页`, 'ok');
+
+    for (let i = 1; i <= pdfDoc.numPages; i++) {
+      setBusy(true, `正在渲染第 ${i} / ${pdfDoc.numPages} 页…`);
+      await renderPage(i, 0);
+    }
+    applyWatermark();
+    updateMeta();
+    setStat(`已加载 ${pdfDoc.numPages} 页 · 点任意一行文字即可修改`, 'ok');
+  } catch (e) {
+    console.error(e);
+    setStat('打开失败：' + (e.message || e), 'err');
+  } finally { setBusy(false); }
+}
+
+$('#btnPick').onclick = () => $('#fileInput').click();
+$('#drop').onclick = () => $('#fileInput').click();
+$('#fileInput').onchange = (e) => {
+  const f = e.target.files[0]; e.target.value = ''; loadPdf(f);
+};
+btnSave.onclick = () => exportPdf();
+
+['dragenter', 'dragover'].forEach((ev) =>
+  document.addEventListener(ev, (e) => { e.preventDefault(); if (!busy) $('#drop').classList.add('over'); })
+);
+document.addEventListener('dragleave', (e) => { if (e.relatedTarget === null) $('#drop').classList.remove('over'); });
+document.addEventListener('drop', (e) => {
+  e.preventDefault(); $('#drop').classList.remove('over');
+  const f = e.dataTransfer?.files?.[0];
+  if (f) loadPdf(f);
+});
+
+/* ============ 导出 ============ */
+function collectOverlays(rec) {
+  const out = [];
+
+  // 被并入其他行的块不再单独导出
+  rec.layer.querySelectorAll('.txt.dirty:not([data-merged])').forEach((d) => {
+    out.push({
+      kind: 'text',
+      left: parseFloat(d.style.left), top: parseFloat(d.style.top),
+      width: parseFloat(d.style.width), height: parseFloat(d.style.height),
+      fontSize: parseFloat(d.style.fontSize),
+      text: (d.innerText || '').replace(/\n+$/, ''),
+      bg: d.dataset.bg || '#ffffff',
+      color: d.dataset.fg || '#111111',
+      bold: d.dataset.bold === '1',
+      // 浏览器会把 font-family 规范化成带双引号的形式，塞进 style 属性里会破坏 HTML
+      font: (d.style.fontFamily || textFont).replace(/"/g, "'"),
+      indent: parseFloat(d.style.textIndent) || 0,
+      lineGap: parseFloat(d.dataset.lineGap || '0') || 0,
+    });
+  });
+
+  rec.annList.forEach((a) => {
+    if (a.kind === 'note') {
+      out.push({
+        kind: 'note', left: a.left, top: a.top, width: a.width,
+        height: a._el ? a._el.offsetHeight : a.height,
+        text: a._el ? a._el.innerText : a.text,
+        color: a.color || '#d9a441', fontSize: a.fontSize || 12,
+      });
+    } else if (a.kind === 'arrow') {
+      out.push({ kind: 'arrow', x1: a.x1, y1: a.y1, x2: a.x2, y2: a.y2, color: a.color, thickness: a.thickness ?? 2 });
+    } else if (a.kind === 'rule') {
+      out.push({ kind: 'rule', left: a.left, top: a.top, width: a.width, thickness: a.thickness ?? 2, color: a.color });
+    } else if (a.kind === 'box' || a.kind === 'ellipse') {
+      out.push({
+        kind: a.kind, left: a.left, top: a.top, width: a.width, height: a.height,
+        color: a.color, thickness: a.thickness ?? 2, dashed: !!a.dashed,
+      });
+    } else if (a.kind === 'highlight') {
+      out.push({
+        kind: 'highlight', left: a.left, top: a.top, width: a.width, height: a.height,
+        color: a.color, opacity: a.opacity ?? 0.32,
+      });
+    }
+  });
+
+  rec.fields.forEach((f) => {
+    if (!f.value) return;
+    out.push({
+      kind: 'text',
+      left: f.left, top: f.top, width: f.w, height: f.h,
+      fontSize: f.fontSize,
+      text: f.value,
+      bg: '#ffffff', color: '#0b2a4a', bold: false,
+      transparentBg: true,
+      font: "'Microsoft YaHei','微软雅黑',sans-serif",
+    });
+  });
+
+  return out;
+}
+
+async function exportPdf() {
+  if (busy) return;
+  if (editingEl) finishEdit(editingEl);
+
+  const live = pages.filter((p) => !p.deleted);
+  if (!live.length) { setStat('没有可导出的页面', 'err'); return; }
+
+  // 注意：不要在这里用 window.confirm —— 它会阻塞主线程，在自动化环境里会直接卡死。
+  // 没有改动也照常导出，只是提示一句。
+  const total = dirtyCount + pageOps +
+    live.reduce((s, p) => s + p.annList.length + p.fields.filter((f) => f.value).length, 0);
+  if (!total && !wm.on) {
+    setStat('没有检测到修改，将按原样导出', 'warn');
+  }
+
+  setBusy(true, '正在生成 PDF…');
+  setStat('生成中…');
+
+  try {
+    const payload = live.map((p) => ({
+      width: p.w,
+      height: p.h,
+      image: p.canvas.toDataURL('image/jpeg', 0.86),
+      overlays: collectOverlays(p),
+      watermark: wm.on && wm.text.trim()
+        ? { text: wm.text, fontSize: wm.size, opacity: wm.opacity, angle: wm.angle, color: '#888888' }
+        : null,
+    }));
+
+    const res = await fetch('/api/export', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ pages: payload, title: sourceName || 'document' }),
+    });
+    if (!res.ok) throw new Error((await res.text()) || `HTTP ${res.status}`);
+
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = (sourceName || 'document') + '-已编辑.pdf';
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 5000);
+
+    setStat(`已导出 ${payload.length} 页 · ${(blob.size / 1024 / 1024).toFixed(1)} MB`, 'ok');
+  } catch (e) {
+    console.error(e);
+    setStat('导出失败：' + (e.message || e), 'err');
+  } finally { setBusy(false); }
+}
+</script>
+</body>
+</html>

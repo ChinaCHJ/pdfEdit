@@ -1,0 +1,24 @@
+# 默认按文本处理并自动识别，下面把二进制类型钉死：
+# 万一 git 把 PDF / CMap 的换行当成文本转换，文件就直接损坏了
+* text=auto
+
+*.pdf   binary
+*.bcmap binary
+*.pfb   binary
+*.ttf   binary
+*.otf   binary
+*.woff  binary
+*.woff2 binary
+*.png   binary
+*.jpg   binary
+*.exe   binary
+
+*.rs   text eol=lf
+*.toml text eol=lf
+*.md   text eol=lf
+*.yml  text eol=lf
+*.html text eol=lf
+*.js   text eol=lf
+*.mjs  text eol=lf
+*.css  text eol=lf
+*.bat  text eol=crlf
